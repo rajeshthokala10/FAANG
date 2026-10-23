@@ -17,13 +17,24 @@ const state = { ...DEFAULTS };
 function readUrl() {
   const q = new URLSearchParams(location.search);
   for (const k of Object.keys(DEFAULTS)) if (q.has(k)) state[k] = q.get(k);
+  // Inside a claude.ai artifact only a bare #token reaches the page, so the
+  // tab is also accepted from the hash.
+  const h = location.hash.slice(1);
+  if (["home", "charts", "weekly", "invest", "data"].includes(h)) state.tab = h;
   if (!INST.some((x) => x.id === state.i)) state.i = "blr";
+}
+// When hosted as an artifact the frame URL is not the shareable one; the
+// page carries its public link in <meta name="share-url">.
+const SHARE_BASE = document.querySelector('meta[name="share-url"]')?.content || "";
+function shareUrl() {
+  if (!SHARE_BASE) return location.href;
+  return state.tab === "home" ? SHARE_BASE : `${SHARE_BASE}#${state.tab}`;
 }
 function writeUrl() {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(state)) if (v !== "" && v !== DEFAULTS[k]) q.set(k, v);
   const s = q.toString();
-  history.replaceState(null, "", s ? `?${s}` : location.pathname);
+  history.replaceState(null, "", (s ? `?${s}` : location.pathname) + (SHARE_BASE && state.tab !== "home" ? `#${state.tab}` : ""));
 }
 function set(patch, rerender = true) {
   Object.assign(state, patch);
@@ -122,7 +133,14 @@ function renderHome(host) {
       <p class="stamp">Both quotes for ${fmtDay(c.date)} from the same primary source type. Bangalore ${inr(c.a, 0)}/g · Tirupati ${inr(c.b, 0)}/g.</p>`;
     } else diff = `<p class="muted">No date with quotes for both cities.</p>`;
   }
-  host.innerHTML = `
+  const none = !Object.keys(DATA.series || {}).length;
+  host.innerHTML = none ? `
+  <div class="card"><h2>No prices collected yet</h2>
+    <p>The analysis engine and screens are ready, but the price sources could not be reached from the build environment, so no Bangalore, Tirupati or Gold BeES prices have been collected.</p>
+    <p>This page shows only real, traceable prices. Nothing is estimated, filled in or borrowed from another city.</p>
+    <p class="stamp">Last collection attempt ${fmtTs(DATA.refresh?.at)}. Details on the Data screen.</p>
+    <button class="btn" data-go="data" style="margin-top:6px">See data status</button></div>
+  <div class="cards">${cards}</div>` : `
   <div class="note"><b>Delayed data, not live.</b> City rates are the published daily 22K rates; Gold BeES is the latest NSE close (or delayed intraday). Data refreshed ${fmtTs(DATA.generated_at)}.</div>
   <div class="cards">${cards}</div>
   <div class="card"><h2>Bangalore vs Tirupati (22K)</h2>${diff}</div>
@@ -453,12 +471,20 @@ function renderData(host) {
 // ------------------------------------------------------------ CSV
 function saveCsv(name, rows) {
   const csv = rows.map((r) => r.map((v) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\n");
+  // In a claude.ai artifact plain download links are blocked; the
+  // `downloads` capability asks the viewer to save instead.
+  if (DOWNLOADS) {
+    DOWNLOADS.save({ filename: name, data: csv }).catch(() => toast("Download cancelled"));
+    return;
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   a.download = name;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
+let DOWNLOADS = null;
+window.claude?.use?.("downloads").then((d) => { DOWNLOADS = d; }).catch(() => {});
 function downloadDaily(id) {
   const s = seriesOf(id);
   const head = id === "goldbees" ? ["date_ist", "close_inr_per_unit"] : ["date_ist", "inr_per_g_22k", "inr_per_10g_22k"];
@@ -482,13 +508,13 @@ document.addEventListener("click", async (e) => {
   else if (t.dataset.setEw) { set({ ew: t.dataset.setEw }); document.getElementById("ew")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
 });
 document.getElementById("share").addEventListener("click", async () => {
-  const url = location.href;
+  const url = shareUrl();
   const title = document.title;
   try {
     if (navigator.share) { await navigator.share({ title, text: "22K gold weekly patterns — Bangalore, Tirupati & Gold BeES", url }); return; }
   } catch (err) { if (err && err.name === "AbortError") return; }
   try { await navigator.clipboard.writeText(url); toast("Link copied"); }
-  catch { prompt("Copy this link", url); }
+  catch { toast(url); }
 });
 let rz;
 window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (state.tab === "charts" || state.tab === "invest") render(); }, 200); });
