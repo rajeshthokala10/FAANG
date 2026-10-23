@@ -1,0 +1,11 @@
+name: probe
+on:
+  push:
+    branches: [claude/gold-dashboard]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in "https://query1.finance.yahoo.com/v8/finance/chart/GOLDBEES.NS?range=5d&interval=1d" "https://www.goodreturns.in/gold-rates/bangalore.html" "https://web.archive.org/cdx/search/cdx?url=goodreturns.in/gold-rates/bangalore.html&limit=3" "https://nsearchives.nseindia.com/" "https://ibjarates.com/"; do echo "$u -> $(curl -sS -m 20 -A 'Mozilla/5.0' -o /dev/null -w '%{http_code} %{size_download}' "$u")"; done
