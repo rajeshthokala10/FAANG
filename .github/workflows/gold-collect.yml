@@ -39,7 +39,7 @@ jobs:
           gzip -9f *.html
       - name: Collect
         working-directory: gold-dashboard
-        run: python collector/build.py --max-snapshots 400 2>&1 | tee collector/samples/build_log.txt
+        run: python collector/build.py --max-snapshots "$(cat collector/max_snapshots.txt 2>/dev/null || echo 4)" 2>&1 | tee collector/samples/build_log.txt
         continue-on-error: true
       - name: Commit
         run: |

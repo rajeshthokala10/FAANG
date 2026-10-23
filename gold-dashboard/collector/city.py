@@ -32,6 +32,9 @@ SOURCES = {
 }
 CDX = "https://web.archive.org/cdx/search/cdx?url={url}&from={start}&filter=statuscode:200&collapse=timestamp:8&output=json&fl=timestamp,original"
 WAYBACK = "https://web.archive.org/web/{ts}id_/{url}"  # id_ = original bytes, no toolbar
+# Bump when extract_22k changes: cached observations from an older parser are
+# discarded and every capture is read again.
+PARSER_VERSION = 1
 
 GST_PATTERNS = [
     r"[^.]{0,160}\bGST\b[^.]{0,160}\.",
@@ -93,7 +96,9 @@ def _cache_path(city: str, source: str) -> str:
 def collect_source(city: str, source: str, start: dt.date, today: dt.date, log: list[str], max_new_snapshots: int = 400) -> dict:
     """Incremental: snapshots already parsed are kept in the cache file."""
     url = SOURCES[source]["url"].format(slug=CITIES[city]["slug"][source])
-    cache = read_json(_cache_path(city, source), {"obs": {}, "snapshots": {}, "gst": []})
+    cache = read_json(_cache_path(city, source), None)
+    if not cache or cache.get("parser") != PARSER_VERSION:
+        cache = {"obs": {}, "snapshots": {}, "gst": [], "parser": PARSER_VERSION}
     obs: dict[str, dict] = cache["obs"]  # date -> {price, src, captured}
     snaps: dict[str, str] = cache["snapshots"]  # wayback ts -> "ok"/"no-rows"/"error"
 
